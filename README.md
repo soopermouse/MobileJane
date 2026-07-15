@@ -1,26 +1,47 @@
-# Jane Mobile v0.3 — Document Workbench
+# Jane Mobile for Android — v1 development package
 
-Jane Mobile now supports work-focused document analysis:
+Native Android GUI for the existing Jane Agent and JaneOS.
 
-- multi-page scanning or image import;
-- on-device OCR;
-- editable recognized text;
-- language detection;
-- translation requests;
-- summaries and plain-language explanations;
-- deadline, amount and required-action extraction;
-- reply drafting through main Jane;
-- offline preliminary analysis;
-- PDF export;
-- integration into Jane's Memory Economy.
+## Included GUI
 
-The mobile client works offline for scanning, OCR and preliminary extraction. Deep translation, legal/work context and reply generation are routed to canonical Jane on the J machine through `/v1/jane/documents/analyze`.
+- Jane conversation and synchronization
+- Push-to-talk voice interaction and spoken replies
+- Multi-page document scanner and OCR
+- Translation/summary/deadline/action analysis contract
+- PDF export
+- Voice-activated local recorder
+- Offline experience queue
+- Jane bridge for the canonical J-machine runtime
 
-Build in Android Studio. Start the bridge with:
+## Build an Android installer
+
+This package is complete source code, not a precompiled APK. Android SDK and Gradle dependencies are not installed in the generation environment, so the APK must be compiled once on a machine with Android Studio.
+
+1. Install Android Studio.
+2. Open this folder.
+3. Allow Gradle Sync and SDK installation to complete.
+4. Connect an Android phone with USB debugging enabled.
+5. Run `BUILD_AND_INSTALL.cmd`.
+
+Alternatively, select **Build → Build APK(s)** in Android Studio. The APK appears under:
+
+`app/build/outputs/apk/debug/app-debug.apk`
+
+## Connect to main Jane
+
+Start the bridge on the J machine:
 
 ```powershell
 python -m pip install -r .\bridge\requirements.txt
 python .\bridge\jane_mobile_bridge.py
 ```
+
+Set Jane Mobile's endpoint to the J machine LAN address, for example:
+
+`http://192.168.1.50:8787`
+
+## Current integration boundary
+
+The Android GUI and API routes are implemented. Translation, deep document interpretation, image understanding, audio transcription and final conversational replies still need their marked bridge adapters connected to the canonical Jane Agent provider. They are not silently faked.
 
 Copyright © 2026 Simona Diana Thrussell. All rights reserved. Proprietary software.
