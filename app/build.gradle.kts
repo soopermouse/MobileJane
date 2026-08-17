@@ -13,8 +13,40 @@ android {
         applicationId = "nl.sdthrussell.jane"
         minSdk = 26
         targetSdk = 37
-        versionCode = 10
-        versionName = "1.0.0-dev"
+        versionCode = 6
+        versionName = "1.6.0"
+    }
+
+    signingConfigs {
+        create("release") {
+            val path = System.getenv("JANE_KEYSTORE_PATH")
+            val storePass = System.getenv("JANE_KEYSTORE_PASSWORD")
+            val alias = System.getenv("JANE_KEY_ALIAS")
+            val keyPass = System.getenv("JANE_KEY_PASSWORD")
+            if (!path.isNullOrBlank() && !storePass.isNullOrBlank() && !alias.isNullOrBlank() && !keyPass.isNullOrBlank()) {
+                storeFile = file(path)
+                storePassword = storePass
+                keyAlias = alias
+                keyPassword = keyPass
+            }
+        }
+    }
+
+    buildTypes {
+        debug {
+            isDebuggable = true
+            isMinifyEnabled = false
+        }
+        release {
+            isDebuggable = false
+            isMinifyEnabled = true
+            isShrinkResources = true
+            signingConfig = signingConfigs.getByName("release")
+            proguardFiles(
+                getDefaultProguardFile("proguard-android-optimize.txt"),
+                "proguard-rules.pro"
+            )
+        }
     }
 
     buildFeatures {

@@ -1,18 +1,71 @@
 package nl.sdthrussell.jane.model
 
+import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 
 @Serializable
-data class JaneStatus(
-    val name: String = "Jane",
-    val state: String = "Awake",
-    val uptimeSeconds: Long = 0,
-    val currentFocus: String = "Listening",
-    val curiosityLevel: Double = 0.65,
-    val attentionBudget: Double = 1.0,
-    val activeInvestigations: Int = 0,
-    val memoryCount: Int = 0,
-    val edgeCount: Int = 0
+data class HealthResponse(
+    val status: String = "unknown",
+    val application: String = "Jane Agent"
+)
+
+@Serializable
+data class ChatRequest(val message: String, val importance: Double = 0.72)
+
+@Serializable
+data class ChatResponse(val response: String)
+
+@Serializable
+data class TextSkillRequest(
+    val text: String,
+    @SerialName("translate_to") val translateTo: String? = "English",
+    @SerialName("media_type") val mediaType: String? = null,
+    @SerialName("byte_size") val byteSize: Int? = null
+)
+
+@Serializable
+data class ProjectRequest(
+    val name: String,
+    val description: String = "",
+    val status: String = "active"
+)
+
+@Serializable
+data class ProjectSummary(
+    val id: String = "",
+    val name: String,
+    val description: String = "",
+    val status: String = "active",
+    val metadata: Map<String, String> = emptyMap()
+)
+
+@Serializable
+data class DocumentSkillResult(
+    val original: String = "",
+    val summary: String = "",
+    val translation: String? = null,
+    val explanation: String? = null,
+    val deadlines: List<String> = emptyList(),
+    val amounts: List<String> = emptyList(),
+    @SerialName("actions_required") val actionsRequired: List<String> = emptyList(),
+    val risks: List<String> = emptyList(),
+    @SerialName("reply_draft") val replyDraft: String? = null,
+    @SerialName("detected_language") val detectedLanguage: String? = null,
+    val confidence: Double = 0.0
+)
+
+@Serializable
+data class VisionSkillResult(
+    val interpretation: String = "",
+    val observations: List<String> = emptyList(),
+    val confidence: Double = 0.0
+)
+
+@Serializable
+data class AudioSkillResult(
+    val interpretation: String = "",
+    val transcript: String = "",
+    val confidence: Double = 0.0
 )
 
 @Serializable
@@ -24,51 +77,53 @@ data class ChatMessage(
 )
 
 @Serializable
-data class MemoryItem(
+data class GoalRecord(
     val id: String,
-    val summary: String,
-    val value: Double,
-    val novelty: Double,
-    val confidence: Double,
-    val status: String
-)
-
-@Serializable
-data class Investigation(
-    val id: String,
-    val question: String,
-    val status: String,
-    val expectedInformationGain: Double,
+    val title: String,
+    val completed: Boolean = false,
     val createdAt: Long
 )
 
 @Serializable
-data class Discovery(
+data class InvestigationRecord(
     val id: String,
+    val question: String,
+    val status: String = "open",
+    val createdAt: Long
+)
+
+@Serializable
+data class CaptureRecord(
+    val id: String,
+    val kind: String,
+    val text: String,
+    val createdAt: Long,
+    val synchronized: Boolean = false
+)
+
+
+@Serializable
+data class JaneAlertSummary(
+    val id: String = "",
+    @SerialName("project_id") val projectId: String? = null,
     val title: String,
-    val explanation: String,
-    val confidence: Double,
-    val timestamp: Long
+    val message: String = "",
+    val severity: String = "info",
+    val status: String = "open",
+    @SerialName("created_at") val createdAt: Long = 0
 )
 
 @Serializable
 data class JaneSnapshot(
-    val status: JaneStatus = JaneStatus(),
     val messages: List<ChatMessage> = emptyList(),
-    val memories: List<MemoryItem> = emptyList(),
-    val investigations: List<Investigation> = emptyList(),
-    val discoveries: List<Discovery> = emptyList()
+    val projects: List<ProjectSummary> = emptyList(),
+    val goals: List<GoalRecord> = emptyList(),
+    val investigations: List<InvestigationRecord> = emptyList(),
+    val captures: List<CaptureRecord> = emptyList(),
+    val alerts: List<JaneAlertSummary> = emptyList(),
+    val lastHealth: HealthResponse = HealthResponse(),
+    val lastUpdated: Long = 0
 )
-
-@Serializable
-data class ObserveRequest(val text: String)
-
-@Serializable
-data class ObserveResponse(
-    val reply: String,
-    val snapshot: JaneSnapshot
-)
-
 
 @Serializable
 data class ExperienceRecord(
@@ -81,18 +136,10 @@ data class ExperienceRecord(
 )
 
 @Serializable
-data class VisionResponse(
-    val description: String,
-    val extractedText: String? = null,
-    val snapshot: JaneSnapshot? = null
+data class ScannedPage(
+    val id: String,
+    val imageUri: String,
+    val extractedText: String,
+    val pageNumber: Int,
+    val confidence: Double = 0.0
 )
-
-
-@Serializable
-data class ScannedPage(val id:String,val imageUri:String,val extractedText:String,val pageNumber:Int,val confidence:Double=0.0)
-
-@Serializable
-data class DocumentAnalysisRequest(val documentId:String,val title:String,val sourceLanguage:String?=null,val targetLanguage:String="en",val pages:List<ScannedPage>,val actions:List<String> = listOf("summarize","translate","extract_deadlines","extract_amounts","explain","draft_reply"))
-
-@Serializable
-data class DocumentAnalysisResult(val documentId:String,val detectedLanguage:String,val title:String,val fullText:String,val translation:String?=null,val summary:String?=null,val explanation:String?=null,val deadlines:List<String> = emptyList(),val amounts:List<String> = emptyList(),val actionsRequired:List<String> = emptyList(),val risks:List<String> = emptyList(),val replyDraft:String?=null,val confidence:Double=0.0,val snapshot:JaneSnapshot?=null)

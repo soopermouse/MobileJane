@@ -5,3 +5,8 @@ build/
 **/build/
 *.iml
 .DS_Store
+
+.gradle/
+local.properties
+build/
+app/build/

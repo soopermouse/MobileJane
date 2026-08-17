@@ -14,5 +14,5 @@ dependencyResolutionManagement {
     }
 }
 
-rootProject.name = "JaneAndroid"
+rootProject.name = "JaneMobile"
 include(":app")

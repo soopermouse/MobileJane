@@ -13,27 +13,35 @@ private val Context.experienceStore by preferencesDataStore(name = "jane_experie
 
 class ExperienceJournal(private val context: Context) {
     private val json = Json { ignoreUnknownKeys = true; encodeDefaults = true }
-    private val key = stringPreferencesKey("records")
+    private val crypto = JaneCrypto()
+    private val encryptedKey = stringPreferencesKey("records_enc_v1")
+    private val legacyKey = stringPreferencesKey("records")
 
     suspend fun list(): List<ExperienceRecord> {
-        val raw = context.experienceStore.data.first()[key] ?: return emptyList()
-        return runCatching {
-            json.decodeFromString<List<ExperienceRecord>>(raw)
-        }.getOrDefault(emptyList())
-    }
-
-    suspend fun append(record: ExperienceRecord) {
-        context.experienceStore.edit {
-            it[key] = json.encodeToString(list() + record)
+        val prefs = context.experienceStore.data.first()
+        prefs[encryptedKey]?.let { encrypted ->
+            return runCatching { json.decodeFromString<List<ExperienceRecord>>(crypto.decryptString(encrypted)) }
+                .getOrDefault(emptyList())
         }
+        val legacy = prefs[legacyKey] ?: return emptyList()
+        val records = runCatching { json.decodeFromString<List<ExperienceRecord>>(legacy) }.getOrDefault(emptyList())
+        save(records)
+        context.experienceStore.edit { it.remove(legacyKey) }
+        return records
     }
 
+    suspend fun append(record: ExperienceRecord) = save(list() + record)
     suspend fun pending(): List<ExperienceRecord> = list().filterNot { it.synchronized }
 
     suspend fun markSynchronized(ids: Set<String>) {
-        val updated = list().map {
-            if (it.id in ids) it.copy(synchronized = true) else it
+        save(list().map { if (it.id in ids) it.copy(synchronized = true) else it })
+    }
+
+    private suspend fun save(records: List<ExperienceRecord>) {
+        val encrypted = crypto.encryptString(json.encodeToString(records))
+        context.experienceStore.edit { prefs ->
+            prefs[encryptedKey] = encrypted
+            prefs.remove(legacyKey)
         }
-        context.experienceStore.edit { it[key] = json.encodeToString(updated) }
     }
 }

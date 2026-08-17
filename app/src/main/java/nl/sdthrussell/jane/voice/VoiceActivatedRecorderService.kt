@@ -12,6 +12,8 @@ import androidx.core.app.NotificationCompat
 import java.io.File
 import java.util.ArrayDeque
 import java.util.UUID
+import nl.sdthrussell.jane.data.JaneCrypto
+import nl.sdthrussell.jane.data.VoicePrivacy
 import kotlin.concurrent.thread
 import kotlin.math.sqrt
 
@@ -34,13 +36,15 @@ class VoiceActivatedRecorderService : Service() {
             NotificationChannel(CHANNEL,"Jane voice recorder",NotificationManager.IMPORTANCE_LOW))
     }
     override fun onStartCommand(intent:Intent?,flags:Int,startId:Int):Int{
-        if(intent?.action==ACTION_STOP) running=false else startLoop()
+        if(intent?.action==ACTION_STOP) running=false else if (VoicePrivacy.hasConsent(this)) startLoop() else stopSelf()
         return START_STICKY
     }
     private fun startLoop(){
         if(running) return
         if(ActivityCompat.checkSelfPermission(this,Manifest.permission.RECORD_AUDIO)!=PackageManager.PERMISSION_GRANTED){ stopSelf(); return }
-        running=true; startForeground(ID,note("Listening for speech"))
+        VoicePrivacy.migrateLegacyRecordings(this)
+        VoicePrivacy.purgeExpired(this)
+        running=true; startForeground(ID,note("Microphone active · listening for speech"))
         wake=getSystemService(PowerManager::class.java).newWakeLock(PowerManager.PARTIAL_WAKE_LOCK,"Jane:Recorder").apply{acquire()}
         thread(name="JaneVAD"){ audioLoop() }
     }
@@ -60,13 +64,31 @@ class VoiceActivatedRecorderService : Service() {
                     writer=WavWriter(file!!,RATE); pre.forEach{writer!!.write(it,it.size)}; start=now; last=now; update("Recording")
                 } else if(writer!=null){
                     writer!!.write(chunk,n); if(voice) last=now
-                    if(now-last>=SILENCE_MS){ writer!!.close(); writer=null; if(now-start<MIN_MS) file?.delete(); file=null; update("Listening for speech") }
+                    if(now-last>=SILENCE_MS){
+                        writer!!.close(); writer=null
+                        val duration = now-start
+                        if(duration<MIN_MS) file?.delete() else file?.let { encryptRecording(it, duration) }
+                        file=null; update("Microphone active · listening for speech")
+                    }
                 }
             }
         } finally {
-            runCatching{writer?.close()}; runCatching{rec.stop()}; rec.release(); stopForeground(STOP_FOREGROUND_REMOVE)
+            runCatching{
+                writer?.close()
+                file?.let { current ->
+                    val duration = System.currentTimeMillis()-start
+                    if(duration>=MIN_MS) encryptRecording(current, duration) else current.delete()
+                }
+            }; runCatching{rec.stop()}; rec.release(); stopForeground(STOP_FOREGROUND_REMOVE)
             wake?.let{if(it.isHeld) it.release()}; stopSelf()
         }
+    }
+    private fun encryptRecording(source: File, durationMs: Long) {
+        val encrypted = JaneCrypto().encrypt(source.readBytes())
+        val target = File(source.parentFile, source.nameWithoutExtension + "-${durationMs}ms.jrec")
+        target.writeBytes(encrypted)
+        target.setLastModified(source.lastModified())
+        source.delete()
     }
     private fun rms(b:ByteArray):Double{ var sum=0.0; var c=0; var i=0; while(i+1<b.size){ val s=(((b[i+1].toInt() shl 8) or (b[i].toInt() and 255))).toShort().toInt(); sum+=s.toDouble()*s; c++; i+=2 }; return if(c==0)0.0 else sqrt(sum/c) }
     private fun note(t:String)=NotificationCompat.Builder(this,CHANNEL).setSmallIcon(android.R.drawable.ic_btn_speak_now).setContentTitle("Jane voice recorder").setContentText(t).setOngoing(true).build()

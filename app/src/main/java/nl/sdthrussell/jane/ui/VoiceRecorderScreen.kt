@@ -20,21 +20,31 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import nl.sdthrussell.jane.data.VoiceRecordingRepository
+import nl.sdthrussell.jane.data.VoicePrivacy
 import nl.sdthrussell.jane.voice.VoiceActivatedRecorderService
 
 @Composable
 fun VoiceRecorderScreen(){
     val context=LocalContext.current; val repo=remember{VoiceRecordingRepository(context)}
-    var active by remember{mutableStateOf(false)}; var recordings by remember{mutableStateOf(repo.list())}
-    val permission=rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()){granted-> if(granted){
+    var active by remember{mutableStateOf(false)}; var recordings by remember{mutableStateOf(repo.list())}; var consent by remember{mutableStateOf(VoicePrivacy.hasConsent(context))}
+    val permission=rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()){granted-> if(granted && consent){
         ContextCompat.startForegroundService(context,Intent(context,VoiceActivatedRecorderService::class.java).apply{action=VoiceActivatedRecorderService.ACTION_START}); active=true
     }}
-    fun start(){ if(ContextCompat.checkSelfPermission(context,Manifest.permission.RECORD_AUDIO)==PackageManager.PERMISSION_GRANTED){ ContextCompat.startForegroundService(context,Intent(context,VoiceActivatedRecorderService::class.java).apply{action=VoiceActivatedRecorderService.ACTION_START}); active=true } else permission.launch(Manifest.permission.RECORD_AUDIO) }
+    fun start(){ if(!consent) return; if(ContextCompat.checkSelfPermission(context,Manifest.permission.RECORD_AUDIO)==PackageManager.PERMISSION_GRANTED){ ContextCompat.startForegroundService(context,Intent(context,VoiceActivatedRecorderService::class.java).apply{action=VoiceActivatedRecorderService.ACTION_START}); active=true } else permission.launch(Manifest.permission.RECORD_AUDIO) }
     fun stop(){ context.startService(Intent(context,VoiceActivatedRecorderService::class.java).apply{action=VoiceActivatedRecorderService.ACTION_STOP}); active=false; recordings=repo.list() }
     LaunchedEffect(active){ while(active){ kotlinx.coroutines.delay(2000); recordings=repo.list() } }
     LazyColumn(Modifier.fillMaxSize().padding(12.dp),verticalArrangement=Arrangement.spacedBy(10.dp)){
-        item{ Text("Voice-activated recorder",style=MaterialTheme.typography.headlineSmall); Text("Records locally when speech is detected and stops after silence. Android shows a persistent microphone notification while active.") }
-        item{ Button(onClick=if(active)::stop else ::start,modifier=Modifier.fillMaxWidth()){ Icon(if(active)Icons.Outlined.Stop else Icons.Outlined.Hearing,null); Spacer(Modifier.width(8.dp)); Text(if(active)"Stop voice activation" else "Enable voice activation") } }
+        item{ Text("Voice-activated recorder",style=MaterialTheme.typography.headlineSmall); Text("Records locally when speech is detected and stops after silence. Android shows a persistent microphone notification while active. Encrypted recordings are automatically deleted after ${VoicePrivacy.RETENTION_DAYS} days.") }
+        item {
+            Card {
+                Row(Modifier.fillMaxWidth().padding(12.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Checkbox(consent, { value -> consent = value; VoicePrivacy.setConsent(context, value); if (!value && active) stop() })
+                    Text("I consent to Jane using the microphone continuously while voice activation is enabled. I understand the persistent Android microphone notification will remain visible.")
+                }
+            }
+        }
+        if (active) item { AssistChip(onClick = {}, label = { Text("MICROPHONE ACTIVE") }, leadingIcon = { Icon(Icons.Outlined.Hearing, null) }) }
+        item{ Button(onClick=if(active)::stop else ::start,modifier=Modifier.fillMaxWidth(), enabled = active || consent){ Icon(if(active)Icons.Outlined.Stop else Icons.Outlined.Hearing,null); Spacer(Modifier.width(8.dp)); Text(if(active)"Stop voice activation" else if(consent) "Enable voice activation" else "Consent required") } }
         items(recordings,key={it.path}){r-> Card{Column(Modifier.padding(12.dp)){Text(r.path.substringAfterLast('/'),fontWeight=FontWeight.Bold);Text("${r.durationMs/1000.0} sec · ${r.bytes/1024} KB");TextButton(onClick={repo.delete(r);recordings=repo.list()}){Icon(Icons.Outlined.Delete,null);Text("Delete")}}} }
     }
 }
