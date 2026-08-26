@@ -9,6 +9,35 @@ data class HealthResponse(
     val application: String = "Jane Agent"
 )
 
+
+@Serializable
+data class PairRequest(val code: String, @SerialName("device_name") val deviceName: String = "J Mobile")
+
+@Serializable
+data class PairResponse(
+    @SerialName("device_id") val deviceId: String,
+    @SerialName("access_token") val accessToken: String,
+    @SerialName("token_type") val tokenType: String = "bearer",
+    @SerialName("agent_id") val agentId: String = "j-agent",
+    @SerialName("api_base") val apiBase: String = "/v1"
+)
+
+@Serializable
+data class IntakeRequest(
+    val kind: String,
+    val text: String,
+    @SerialName("project_id") val projectId: String? = null,
+    @SerialName("media_uri") val mediaUri: String? = null,
+    val metadata: Map<String, String> = emptyMap()
+)
+
+@Serializable
+data class IntakeResponse(
+    val experience: kotlinx.serialization.json.JsonObject? = null,
+    val interpretation: kotlinx.serialization.json.JsonObject? = null,
+    val integration: kotlinx.serialization.json.JsonObject? = null
+)
+
 @Serializable
 data class ChatRequest(val message: String, val importance: Double = 0.72)
 

@@ -18,7 +18,13 @@ class JaneCrypto {
         private const val IV_BYTES = 12
     }
 
-    private fun key(): SecretKey {
+    @Volatile private var cachedKey: SecretKey? = null
+
+    private fun key(): SecretKey = cachedKey ?: synchronized(this) {
+        cachedKey ?: loadOrCreateKey().also { cachedKey = it }
+    }
+
+    private fun loadOrCreateKey(): SecretKey {
         val store = KeyStore.getInstance(KEYSTORE).apply { load(null) }
         (store.getKey(ALIAS, null) as? SecretKey)?.let { return it }
         val generator = KeyGenerator.getInstance(KeyProperties.KEY_ALGORITHM_AES, KEYSTORE)

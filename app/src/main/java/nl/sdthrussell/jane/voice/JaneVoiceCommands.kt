@@ -21,8 +21,6 @@ class JaneVoiceCommands(private val context: Context) {
         val text = raw.trim()
         val lower = text.lowercase(Locale.getDefault())
 
-        if ((lower.contains("show") && lower.contains("alert")) || lower.contains("urgent alert"))
-            return Result(true, "Opening your dashboard and Jane Alerts.", Destination.DASHBOARD)
         if ((lower.contains("show") && lower.contains("project")) || lower == "projects")
             return Result(true, "Opening your projects.", Destination.PROJECTS)
 
@@ -45,7 +43,7 @@ class JaneVoiceCommands(private val context: Context) {
         }
 
         if (lower.contains("what needs my attention") || lower.contains("what's blocked") || lower.contains("what is blocked") || lower.contains("next actions"))
-            return Result(true, agentInstruction = "Answer this using my current projects and Jane Alert state: $text")
+            return Result(true, agentInstruction = "Answer this using my current projects, blockers, goals and recent activity: $text")
 
         return Result(false)
     }

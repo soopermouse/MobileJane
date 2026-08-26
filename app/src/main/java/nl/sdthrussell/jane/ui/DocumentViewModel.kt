@@ -8,7 +8,7 @@ import java.util.UUID
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
-import nl.sdthrussell.jane.data.JaneApi
+import nl.sdthrussell.jane.data.JaneRepository
 import nl.sdthrussell.jane.data.LocalJaneStore
 import nl.sdthrussell.jane.model.DocumentSkillResult
 import nl.sdthrussell.jane.model.ScannedPage
@@ -26,6 +26,7 @@ data class DocumentUiState(
 class DocumentViewModel(app: Application) : AndroidViewModel(app) {
     private val store = LocalJaneStore(app)
     private val ocr = JaneOcr(app)
+    private val repository = JaneRepository(app, store)
     private val _state = MutableStateFlow(DocumentUiState())
     val state = _state.asStateFlow()
 
@@ -63,7 +64,7 @@ class DocumentViewModel(app: Application) : AndroidViewModel(app) {
             return@launch
         }
         _state.value = current.copy(analyzing = true, error = null)
-        runCatching { JaneApi(store.loadEndpoint(), store.loadBearerToken()).analyzeDocument(text, current.targetLanguage) }
+        repository.analyzeDocument(text, current.targetLanguage, current.pages.firstOrNull()?.imageUri)
             .onSuccess { _state.value = _state.value.copy(analyzing = false, result = it) }
             .onFailure { _state.value = _state.value.copy(analyzing = false, error = it.message) }
     }

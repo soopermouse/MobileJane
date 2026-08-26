@@ -1,5 +1,6 @@
 package nl.sdthrussell.jane.data
 
+import java.io.IOException
 import java.util.concurrent.TimeUnit
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -13,10 +14,12 @@ import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
 import okhttp3.HttpUrl.Companion.toHttpUrl
 
-/** Authenticated HTTP client for Jane Agent. */
+class JaneAuthenticationException(message: String = "Reconnect to J Agent") : IOException(message)
+
+/** Authenticated HTTP client for J Agent. Pairing exchange is intentionally unauthenticated. */
 class JaneApi(
     private val baseUrl: String,
-    bearerToken: String,
+    bearerToken: String = "",
     clientBuilder: OkHttpClient.Builder = OkHttpClient.Builder()
 ) {
     private val json = Json { ignoreUnknownKeys = true; encodeDefaults = true }
@@ -26,48 +29,46 @@ class JaneApi(
     private val client = clientBuilder
         .connectTimeout(5, TimeUnit.SECONDS)
         .readTimeout(90, TimeUnit.SECONDS)
-        .addInterceptor { chain ->
-            check(token.isNotBlank()) { "Jane Agent authentication token is required" }
-            chain.proceed(
-                chain.request().newBuilder()
-                    .header("Authorization", "Bearer $token")
-                    .header("Accept", "application/json")
-                    .build()
-            )
-        }
         .build()
 
-    suspend fun health(): HealthResponse = get("/health")
+    suspend fun health(): HealthResponse = get("/health", authenticated = false)
+    suspend fun pair(code: String, deviceName: String = "J Mobile"): PairResponse =
+        post("/v1/os/pair", PairRequest(code.trim().uppercase(), deviceName), authenticated = false)
     suspend fun chat(message: String, importance: Double = 0.72): ChatResponse = post("/chat", ChatRequest(message, importance))
     suspend fun projects(): List<ProjectSummary> = get("/projects")
-    suspend fun alerts(): List<JaneAlertSummary> = get("/alerts")
     suspend fun saveProject(request: ProjectRequest): ProjectSummary = post("/projects", request)
-    suspend fun analyzeDocument(text: String, translateTo: String?): DocumentSkillResult = post("/skills/documents", TextSkillRequest(text, translateTo))
-    suspend fun analyzeVision(extractedText: String, mediaType: String? = "image/jpeg", byteSize: Int? = null): VisionSkillResult =
-        post("/skills/vision", TextSkillRequest(extractedText, null, mediaType, byteSize))
-    suspend fun analyzeAudio(transcript: String, mediaType: String? = "audio/wav", byteSize: Int? = null): AudioSkillResult =
-        post("/skills/audio", TextSkillRequest(transcript, null, mediaType, byteSize))
+    suspend fun intake(request: IntakeRequest): IntakeResponse = post("/intake", request)
 
     private fun validateEndpoint(value: String) {
         val url = value.toHttpUrl()
         if (url.isHttps) return
         val emulatorDevHost = BuildConfig.DEBUG && url.scheme == "http" && url.host == "10.0.2.2"
-        require(emulatorDevHost) { "Jane Agent must use HTTPS. Cleartext HTTP is allowed only for 10.0.2.2 in debug builds." }
+        require(emulatorDevHost) { "J Agent must use HTTPS. Cleartext HTTP is allowed only for 10.0.2.2 in debug builds." }
     }
 
-    private suspend inline fun <reified T> get(path: String): T = withContext(Dispatchers.IO) {
-        execute(Request.Builder().url("$root$path").get().build())
+    private fun request(path: String, authenticated: Boolean): Request.Builder {
+        val builder = Request.Builder().url("$root$path").header("Accept", "application/json")
+        if (authenticated) {
+            check(token.isNotBlank()) { "J Agent is not paired. Reconnect this device." }
+            builder.header("Authorization", "Bearer $token")
+        }
+        return builder
     }
 
-    private suspend inline fun <reified Req, reified Res> post(path: String, value: Req): Res = withContext(Dispatchers.IO) {
+    private suspend inline fun <reified T> get(path: String, authenticated: Boolean = true): T = withContext(Dispatchers.IO) {
+        execute(request(path, authenticated).get().build())
+    }
+
+    private suspend inline fun <reified Req, reified Res> post(path: String, value: Req, authenticated: Boolean = true): Res = withContext(Dispatchers.IO) {
         val body = json.encodeToString(value).toRequestBody(mediaType)
-        execute(Request.Builder().url("$root$path").post(body).build())
+        execute(request(path, authenticated).post(body).build())
     }
 
     private inline fun <reified T> execute(request: Request): T {
         client.newCall(request).execute().use { response ->
             val raw = response.body.string()
-            check(response.isSuccessful) { "Jane Agent returned HTTP ${response.code}: ${raw.take(300)}" }
+            if (response.code == 401) throw JaneAuthenticationException()
+            check(response.isSuccessful) { "J Agent returned HTTP ${response.code}: ${raw.take(300)}" }
             return json.decodeFromString(raw)
         }
     }

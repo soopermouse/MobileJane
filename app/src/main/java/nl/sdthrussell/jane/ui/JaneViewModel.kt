@@ -9,6 +9,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import nl.sdthrussell.jane.data.JaneRepository
 import nl.sdthrussell.jane.data.LocalJaneStore
+import nl.sdthrussell.jane.data.JaneAuthenticationException
 import nl.sdthrussell.jane.model.CaptureRecord
 import nl.sdthrussell.jane.model.GoalRecord
 import nl.sdthrussell.jane.model.InvestigationRecord
@@ -51,9 +52,39 @@ class JaneViewModel(application: Application) : AndroidViewModel(application) {
     fun refresh() = viewModelScope.launch {
         _state.value = _state.value.copy(loading = true, error = null)
         repository.refresh().onSuccess {
-            _state.value = _state.value.copy(snapshot = it, loading = false, connected = true)
+            _state.value = _state.value.copy(
+                snapshot = it, loading = false, connected = true,
+                pendingExperiences = repository.pendingExperiences().size
+            )
+        }.onFailure { failure ->
+            if (failure is JaneAuthenticationException) {
+                repository.clearBearerToken()
+                _state.value = _state.value.copy(loading = false, connected = false, authConfigured = false, error = "J Agent connection expired. Pair this phone again.")
+            } else {
+                _state.value = _state.value.copy(loading = false, connected = false, error = failure.message)
+            }
+        }
+    }
+
+    fun pair(endpoint: String, code: String) = viewModelScope.launch {
+        if (endpoint.isBlank() || code.isBlank()) return@launch
+        _state.value = _state.value.copy(loading = true, error = null)
+        repository.pair(endpoint, code).onSuccess {
+            _state.value = _state.value.copy(endpoint = endpoint.trim().trimEnd('/'), authConfigured = true, loading = false)
+            refresh()
         }.onFailure {
-            _state.value = _state.value.copy(loading = false, connected = false, error = it.message)
+            _state.value = _state.value.copy(loading = false, connected = false, authConfigured = false, error = "Pairing failed: ${it.message}")
+        }
+    }
+
+    fun synchronize() = viewModelScope.launch {
+        repository.synchronizePending().onSuccess {
+            _state.value = _state.value.copy(pendingExperiences = repository.pendingExperiences().size, connected = true, error = null)
+        }.onFailure { failure ->
+            if (failure is JaneAuthenticationException) {
+                repository.clearBearerToken()
+                _state.value = _state.value.copy(authConfigured = false, connected = false, error = "J Agent connection expired. Pair this phone again.")
+            } else _state.value = _state.value.copy(connected = false, error = failure.message)
         }
     }
 
@@ -66,7 +97,12 @@ class JaneViewModel(application: Application) : AndroidViewModel(application) {
                 onReply(reply)
             }.onFailure { failure ->
                 val (reply, snapshot) = repository.offlineChat(text, _state.value.snapshot)
-                _state.value = _state.value.copy(snapshot = snapshot, loading = false, connected = false, error = "Portable mode: ${failure.message}")
+                if (failure is JaneAuthenticationException) {
+                    repository.clearBearerToken()
+                    _state.value = _state.value.copy(snapshot = snapshot, loading = false, connected = false, authConfigured = false, error = "J Agent connection expired. Your message is safe offline; pair this phone again.")
+                } else {
+                    _state.value = _state.value.copy(snapshot = snapshot, loading = false, connected = false, error = "Portable mode: ${failure.message}")
+                }
                 onReply(reply)
             }
         }
@@ -77,8 +113,11 @@ class JaneViewModel(application: Application) : AndroidViewModel(application) {
         _state.value = _state.value.copy(loading = true, error = null)
         repository.saveProject(name, description, _state.value.snapshot).onSuccess {
             _state.value = _state.value.copy(snapshot = it, loading = false, connected = true)
-        }.onFailure {
-            _state.value = _state.value.copy(loading = false, connected = false, error = it.message)
+        }.onFailure { failure ->
+            if (failure is JaneAuthenticationException) {
+                repository.clearBearerToken()
+                _state.value = _state.value.copy(loading = false, connected = false, authConfigured = false, error = "J Agent connection expired. Pair this phone again.")
+            } else _state.value = _state.value.copy(loading = false, connected = false, error = failure.message)
         }
     }
 
@@ -102,15 +141,10 @@ class JaneViewModel(application: Application) : AndroidViewModel(application) {
         if (sendToJane) send("Mobile $kind capture: ${text.trim()}")
     }
 
-    fun saveConnection(endpoint: String, bearerToken: String) = viewModelScope.launch {
+    fun saveEndpoint(endpoint: String) = viewModelScope.launch {
         val cleaned = endpoint.trim().trimEnd('/')
         repository.updateEndpoint(cleaned)
-        if (bearerToken.isNotBlank()) repository.updateBearerToken(bearerToken)
-        _state.value = _state.value.copy(
-            endpoint = cleaned,
-            authConfigured = repository.bearerToken().isNotBlank()
-        )
-        refresh()
+        _state.value = _state.value.copy(endpoint = cleaned)
     }
 
     private fun updateLocal(transform: (JaneSnapshot) -> JaneSnapshot) = viewModelScope.launch {

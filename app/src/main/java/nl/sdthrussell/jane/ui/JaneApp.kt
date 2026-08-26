@@ -16,7 +16,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import androidx.core.content.FileProvider
@@ -118,8 +117,6 @@ private fun HomePane(
     )
     val activeProjects = projects.count { it.status.equals("active", true) }
     val blockedProjects = projects.count { !it.metadata["blocker"].isNullOrBlank() }
-    val openAlerts = state.snapshot.alerts.filterNot { it.status.equals("resolved", true) || it.status.equals("closed", true) }
-    val urgentAlerts = openAlerts.count { it.severity.equals("critical", true) || it.severity.equals("high", true) }
     val openGoals = state.snapshot.goals.count { !it.completed }
 
     LazyColumn(
@@ -141,31 +138,11 @@ private fun HomePane(
                 DashboardMetric("Projects", projects.size.toString(), Modifier.weight(1f))
                 DashboardMetric("Active", activeProjects.toString(), Modifier.weight(1f))
                 DashboardMetric("Blocked", blockedProjects.toString(), Modifier.weight(1f))
-                DashboardMetric("Alerts", openAlerts.size.toString(), Modifier.weight(1f))
+                DashboardMetric("Offline", state.pendingExperiences.toString(), Modifier.weight(1f))
             }
             if (openGoals > 0) {
                 Spacer(Modifier.height(6.dp))
                 Text("$openGoals open goals", style = MaterialTheme.typography.labelMedium)
-            }
-        }
-
-        item {
-            Row(Modifier.fillMaxWidth(), Arrangement.SpaceBetween, Alignment.CenterVertically) {
-                Column {
-                    Text("Jane Alert", style = MaterialTheme.typography.titleLarge)
-                    Text(
-                        if (openAlerts.isEmpty()) "No open alerts" else "$urgentAlerts urgent · ${openAlerts.size} open",
-                        style = MaterialTheme.typography.bodySmall
-                    )
-                }
-                TextButton(vm::refresh) { Text("Refresh") }
-            }
-        }
-        if (openAlerts.isEmpty()) {
-            item { EmptyCard("Jane Alert has nothing requiring your attention.") }
-        } else {
-            items(openAlerts.sortedWith(compareBy<JaneAlertSummary> { alertSeverityRank(it.severity) }.thenByDescending { it.createdAt }).take(8), key = { it.id.ifBlank { it.title + it.createdAt } }) { alert ->
-                MobileAlertCard(alert, projects.firstOrNull { it.id == alert.projectId }?.name)
             }
         }
 
@@ -179,7 +156,7 @@ private fun HomePane(
             item { EmptyCard("No projects loaded from Jane Agent yet.") }
         } else {
             items(projects, key = { it.id.ifBlank { it.name } }) { project ->
-                MobileProjectDashboardCard(project, openAlerts.count { it.projectId == project.id }, onOpenChat)
+                MobileProjectDashboardCard(project, onOpenChat)
             }
         }
 
@@ -223,22 +200,7 @@ private fun DashboardMetric(label: String, value: String, modifier: Modifier = M
 }
 
 @Composable
-private fun MobileAlertCard(alert: JaneAlertSummary, projectName: String?) {
-    Card {
-        Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-            Row(Modifier.fillMaxWidth(), Arrangement.SpaceBetween, Alignment.CenterVertically) {
-                Text(alert.title, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
-                AssistChip(onClick = {}, label = { Text(alert.severity.uppercase()) })
-            }
-            if (!projectName.isNullOrBlank()) Text(projectName, style = MaterialTheme.typography.labelMedium)
-            if (alert.message.isNotBlank()) Text(alert.message)
-            if (alert.createdAt > 0) Text(formatTime(alert.createdAt), style = MaterialTheme.typography.labelSmall)
-        }
-    }
-}
-
-@Composable
-private fun MobileProjectDashboardCard(project: ProjectSummary, alertCount: Int, onOpenChat: () -> Unit) {
+private fun MobileProjectDashboardCard(project: ProjectSummary, onOpenChat: () -> Unit) {
     val priority = project.metadata["priority"]?.takeIf { it.isNotBlank() } ?: "normal"
     val nextAction = project.metadata["next_action"]?.takeIf { it.isNotBlank() }
     val blocker = project.metadata["blocker"]?.takeIf { it.isNotBlank() }
@@ -255,7 +217,6 @@ private fun MobileProjectDashboardCard(project: ProjectSummary, alertCount: Int,
             }
             Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                 SuggestionChip(onClick = {}, label = { Text(project.status) })
-                if (alertCount > 0) SuggestionChip(onClick = {}, label = { Text("$alertCount alert${if (alertCount == 1) "" else "s"}") })
             }
             blocker?.let {
                 Text("BLOCKER", style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold)
@@ -375,7 +336,7 @@ private fun MorePane(vm: JaneViewModel) {
     var goal by remember { mutableStateOf("") }
     var investigation by remember { mutableStateOf("") }
     var endpoint by remember(state.endpoint) { mutableStateOf(state.endpoint) }
-    var bearerToken by remember { mutableStateOf("") }
+    var pairCode by remember { mutableStateOf("") }
 
     LazyColumn(Modifier.fillMaxSize().padding(12.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         item { Text("Jane workspace", style = MaterialTheme.typography.headlineSmall) }
@@ -412,21 +373,24 @@ private fun MorePane(vm: JaneViewModel) {
         item { OutlinedTextField(endpoint, { endpoint = it }, label = { Text("Jane Agent URL") }, modifier = Modifier.fillMaxWidth()) }
         item {
             OutlinedTextField(
-                bearerToken,
-                { bearerToken = it },
-                label = { Text(if (state.authConfigured) "Bearer token (stored securely; leave blank to keep current)" else "Bearer token") },
-                visualTransformation = PasswordVisualTransformation(),
+                pairCode,
+                { pairCode = it.uppercase() },
+                label = { Text(if (state.authConfigured) "New one-time pairing code (only needed to reconnect)" else "One-time pairing code") },
                 singleLine = true,
                 modifier = Modifier.fillMaxWidth()
             )
         }
+        item { Text("Get a one-time code from your J Agent account. The phone exchanges it for a device credential and stores that credential encrypted; you never type a bearer token.") }
         item { Text("Production endpoints must use HTTPS. Debug emulator access may use http://10.0.2.2:8000 only.") }
-        item { Button({ vm.saveConnection(endpoint, bearerToken); bearerToken = "" }, modifier = Modifier.fillMaxWidth()) { Icon(Icons.Outlined.Wifi, null); Text(" Save secure connection and test") } }
+        item { Button({ vm.pair(endpoint, pairCode); pairCode = "" }, enabled = endpoint.isNotBlank() && pairCode.isNotBlank(), modifier = Modifier.fillMaxWidth()) { Icon(Icons.Outlined.Link, null); Text(if (state.authConfigured) " Reconnect this phone" else " Pair this phone") } }
+        if (state.pendingExperiences > 0) item {
+            OutlinedButton(vm::synchronize, modifier = Modifier.fillMaxWidth()) { Icon(Icons.Outlined.Sync, null); Text(" Sync ${state.pendingExperiences} offline experience(s)") }
+        }
         item {
             Card { Column(Modifier.padding(14.dp)) {
                 Text("Compatibility", fontWeight = FontWeight.Bold)
-                Text("Jane Agent API v4.1.1")
-                Text("JaneOS v4 through Jane Agent")
+                Text("J Agent API v4.2.3")
+                Text("J OS v0.7.4 through J Agent")
                 Text("Mobile structured goals and investigations are local until matching Agent endpoints are published.")
             } }
         }
